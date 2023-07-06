@@ -1,0 +1,68 @@
+name: Build Android App
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v2
+        with:
+          repository: GuinnessShep/android-demo-app
+
+      - name: Set up JDK 1.8
+        uses: actions/setup-java@v1
+        with:
+          java-version: 1.8
+
+      - name: Install SDKMAN and Gradle
+        run: |
+          curl -s "https://get.sdkman.io" | bash
+          source "$HOME/.sdkman/bin/sdkman-init.sh"
+          sdk install gradle
+
+      - name: Update Android SDK
+        run: |
+          yes | sdkmanager --licenses
+          yes | sdkmanager --update
+
+      - name: Configure Gradle Wrapper
+        run: |
+          cd android-demo-app
+          chmod +x gradlew
+          ./gradlew wrapper --gradle-version 7.0
+
+      - name: Build Gradle Files
+        run: |
+          cd android-demo-app
+          chmod +x gradlew
+          ./gradlew buildEnvironment
+
+      - name: Build with Gradle
+        run: |
+          cd android-demo-app
+          chmod +x gradlew
+          find . -maxdepth 1 -type d \( ! -name . \) -exec bash -c "cd {} && ../gradlew assembleDebug" \;
+        continue-on-error: true
+
+      - name: Check Build Status
+        run: |
+          cd android-demo-app
+          exit_code=0
+          for dir in */; do
+            if [ -f "$dir/build/outputs/apk/debug/app-debug.apk" ]; then
+              echo "Build succeeded for $dir"
+            else
+              echo "Build failed for $dir"
+              exit_code=1
+            fi
+          done
+          exit $exit_code
