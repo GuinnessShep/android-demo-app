@@ -1,0 +1,112 @@
+name: Build Android App
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v2
+
+      - name: Set up JDK 1.8
+        uses: actions/setup-java@v1
+        with:
+          java-version: 1.8
+
+      - name: Install Android Command-line Tools
+        run: |
+          wget https://dl.google.com/android/repository/commandlinetools-linux-6858069_latest.zip
+          unzip commandlinetools-linux-6858069_latest.zip -d "$HOME"/Android/cmdline-tools
+          rm commandlinetools-linux-6858069_latest.zip
+          export ANDROID_HOME="$HOME/Android"
+          export PATH="$PATH:$ANDROID_HOME/cmdline-tools/tools/bin"
+          yes | sdkmanager --licenses
+
+      - name: Update Android SDK
+        run: sdkmanager --update
+
+      - name: Find and Download Missing Files
+        run: |
+          cd android-demo-app
+          missing_files=()
+          for dir in */; do
+            if [ "$dir" != ".github/" ]; then
+              cd "$dir"
+              if [ -f "build.gradle" ]; then
+                check_file() {
+                  if [ ! -f "$1" ]; then
+                    echo "File '$1' not found in $dir"
+                    missing_files+=("$dir")
+                  fi
+                }
+
+                check_file "gradlew"
+                check_file "gradle/wrapper/gradle-wrapper.jar"
+                check_file "gradle/wrapper/gradle-wrapper.properties"
+                # Add checks for other required files here
+
+                if [ ${#missing_files[@]} -eq 0 ]; then
+                  continue
+                fi
+
+                gradle_version=$(grep -oP "(?<=gradle-)[\d.]+(?=-bin.zip)" gradle/wrapper/gradle-wrapper.properties)
+                gradle_wrapper_url="https://services.gradle.org/distributions/gradle-${gradle_version}-all.zip"
+                curl -sLO "$gradle_wrapper_url" && unzip -q gradle-"${gradle_version}"-all.zip
+                mv "gradle-${gradle_version}"/* .
+                rm -rf "gradle-${gradle_version}"
+                rm gradle-"${gradle_version}"-all.zip
+              fi
+              cd ..
+            fi
+          done
+
+          if [ ${#missing_files[@]} -gt 0 ]; then
+            echo "Missing files in directories: ${missing_files[*]}"
+            exit 1
+          fi
+
+      - name: Build with Gradle
+        run: |
+          cd android-demo-app
+          failed_dirs=()
+          for dir in */; do
+            if [ "$dir" != ".github/" ]; then
+              cd "$dir"
+              if [ -f "build.gradle" ]; then
+                if [ ! -f "gradlew" ]; then
+                  gradle_version=$(grep -oP "(?<=gradle-)[\d.]+(?=-bin.zip)" gradle/wrapper/gradle-wrapper.properties)
+                  gradle_wrapper_url="https://services.gradle.org/distributions/gradle-${gradle_version}-all.zip"
+                  curl -sLO "$gradle_wrapper_url" && unzip -q gradle-"${gradle_version}"-all.zip
+                  mv "gradle-${gradle_version}"/* .
+                  rm -Apologies for the incomplete response. Here's the updated continuation of the script:
+
+```yaml
+                  mv "gradle-${gradle_version}"/* .
+                  rm -rf "gradle-${gradle_version}"
+                  rm gradle-"${gradle_version}"-all.zip
+                fi
+                chmod +x gradlew
+                if ! ./gradlew build; then
+                  echo "Build failed for $dir"
+                  failed_dirs+=("$dir")
+                else
+                  echo "Build succeeded for $dir"
+                fi
+                rm -rf .gradle
+              fi
+              cd ..
+            fi
+          done
+
+          if [ ${#failed_dirs[@]} -gt 0 ]; then
+            echo "Failed directories: ${failed_dirs[*]}"
+            exit 1
+          fi
