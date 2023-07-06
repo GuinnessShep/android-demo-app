@@ -1,0 +1,82 @@
+name: Build Android App
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v2
+        with:
+          repository: GuinnessShep/android-demo-app
+
+      - name: Set up JDK 1.8
+        uses: actions/setup-java@v1
+        with:
+          java-version: 1.8
+
+      - name: Install SDKMAN and Gradle
+        run: |
+          curl -s "https://get.sdkman.io" | bash
+          source "$HOME/.sdkman/bin/sdkman-init.sh"
+          sdk install gradle
+
+      - name: Update Android SDK
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager --update
+
+      - name: Build with Gradle
+        run: |
+          cd android-demo-app
+          failed_dirs=()
+          retries=3
+          for dir in */; do
+            cd "$dir"
+            if [ -f "build.gradle" ]; then
+              chmod +x gradlew
+              if [ ! -f "gradlew" ]; then
+                gradle wrapper --gradle-version 7.0
+              fi
+              if [ -f "gradlew" ]; then
+                attempts=1
+                while [ $attempts -le $retries ]; do
+                  echo "Attempt $attempts: Building $dir"
+                  if ./gradlew assembleDebug; then
+                    if [ -f "build/outputs/apk/debug/app-debug.apk" ]; then
+                      echo "Build succeeded for $dir"
+                      break
+                    else
+                      echo "Build failed for $dir"
+                      attempts=$((attempts + 1))
+                      sleep 10
+                    fi
+                  else
+                    echo "Build failed for $dir"
+                    attempts=$((attempts + 1))
+                    sleep 10
+                  fi
+                done
+                if [ $attempts -gt $retries ]; then
+                  echo "Failed to build $dir after $retries attempts"
+                  failed_dirs+=("$dir")
+                fi
+              else
+                echo "Gradle wrapper not found in $dir"
+                failed_dirs+=("$dir")
+              fi
+            fi
+            cd ..
+          done
+          if [ ${#failed_dirs[@]} -gt 0 ]; then
+            echo "Failed directories: ${failed_dirs[*]}"
+            exit 1
+          fi
