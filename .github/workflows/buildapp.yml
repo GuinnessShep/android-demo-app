@@ -33,6 +33,9 @@ jobs:
       - name: Update Android SDK
         run: |
           echo "y" | sudo sdkmanager --update
+          source "$HOME/.sdkman/bin/sdkman-init.sh"
+          sdk selfupdate
+
 
       - name: Build with Gradle
         run: |
