@@ -1,0 +1,140 @@
+name: Build Android App
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v2
+        with:
+          repository: GuinnessShep/android-demo-app
+
+      - name: Set up JDK 1.8
+        uses: actions/setup-java@v1
+        with:
+          java-version: 1.8
+
+      - name: Install SDKMAN and Gradle
+        run: |
+          curl -s "https://get.sdkman.io" | bash
+          source "$HOME/.sdkman/bin/sdkman-init.sh"
+          sdk install gradle
+
+      - name: Update Android SDK
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager --update
+
+      - name: Find and Download Missing Files
+        run: |
+          cd android-demo-app
+          missing_files=()
+          for dir in */; do
+            cd "$dir"
+            if [ -f "build.gradle" ]; then
+              check_file() {
+                if [ ! -f "$1" ]; then
+                  echo "File '$1' not found in $dir"
+                  missing_files+=("$dir")
+                fi
+              }
+
+              check_file "gradlew"
+              check_file "gradle/wrapper/gradle-wrapper.jar"
+              check_file "gradle/wrapper/gradle-wrapper.properties"
+              # Add checks for other required files here
+              
+              if [ ${#missing_files[@]} -eq 0 ]; then
+                continue
+              fi
+
+              gradle_version=$(grep -oP "(?<=gradle-)[\d.]+(?=-bin.zip)" gradle/wrapper/gradle-wrapper.properties)
+              gradle_wrapper_url="https://services.gradle.org/distributions/gradle-${gradle_version}-bin.zip"
+              curl -sLO "$gradle_wrapper_url" && unzip -q gradle-"${gradle_version}"-bin.zip
+              mv "gradle-${gradle_version}"/* .
+              rm -rf "gradle-${gradle_version}"
+              rm gradle-"${gradle_version}"-bin.zip
+            fi
+            cd ..
+          done
+
+          if [ ${#missing_files[@]} -gt 0 ]; then
+            echo "Missing files in directories: ${missing_files[*]}"
+            exit 1
+          fi
+
+      - name: Build with Gradle
+        run: |
+          cd android-demo-app
+          failed_dirs=()
+          for dir in */; do
+            cd "$dir"
+            if [ -f "build.gradle" ]; then
+              chmod +x gradlew
+              ./gradlew assembleDebug
+              if [ -f "build/outputs/apk/debug/app-debug.apk" ]; then
+                echo "Build succeeded for $dir"
+              else
+                echo "Build failed for $dir"
+                failed_dirs+=("$dir")
+              fi
+            fi
+            cd ..
+          done
+
+          if [ ${#failed_dirs[@]} -gt 0 ]; then
+            echo "Failed directories: ${failed_dirs[*]}"
+            exit 1
+          fi
+
+      - name: Check Gradle Build Errors
+        run: |
+          cd android-demo-app
+          failed_builds=()
+          while read -r line; do
+            if [[ $line == *"BUILD FAILED"* ]]; then
+              failed_builds+=("${line%: *}")
+            fi
+          done < <(grep -r "BUILD FAILEDApologies for the incomplete response. Here's the continuation of the updated script:
+
+```yaml
+          done < <(grep -r "BUILD FAILED" . || true)
+          if [ ${#failed_builds[@]} -gt 0 ]; then
+            echo "Failed Gradle builds: ${failed_builds[*]}"
+            exit 1
+          fi
+
+      - name: Check Build Output Files
+        run: |
+          cd android-demo-app
+          missing_output_files=()
+          for dir in */; do
+            cd "$dir"
+            if [ -f "build.gradle" ]; then
+              if [ ! -f "build/outputs/apk/debug/app-debug.apk" ]; then
+                missing_output_files+=("$dir")
+              fi
+            fi
+            cd ..
+          done
+          if [ ${#missing_output_files[@]} -gt 0 ]; then
+            echo "Missing output files in directories: ${missing_output_files[*]}"
+            exit 1
+          fi
+
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clean up
+        run: |
+          rm -rf android-demo-app
+
